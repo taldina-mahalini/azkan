@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import sys
@@ -16,9 +17,9 @@ if sys.platform == "win32":
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 async def run_login_helper():
-    print("\n" + "=" * 65)
-    print("      🔐 SMAILPRO PREMIUM LOGIN HELPER")
-    print("=" * 65)
+    print("\n" + "=" * 70)
+    print("      🔐 SMAILPRO PREMIUM LOGIN & AUTO-SYNC HELPER")
+    print("=" * 70)
     print("Membuka browser Chromium di layar Anda...")
     print(f"Direktori Profil: {config.BROWSER_PROFILE_DIR}\n")
     
@@ -42,23 +43,25 @@ async def run_login_helper():
     print(f"Membuka halaman login: {login_url}")
     await page.goto(login_url)
     
-    # Otomatis centang Remember Me agar cookies tahan bertahun-tahun
+    # Otomatis centang Remember Me agar cookies tahan jangka panjang
     try:
         await page.wait_for_selector("#remember_me", timeout=6000)
         if not await page.is_checked("#remember_me"):
             await page.check("#remember_me")
-            print("✅ Opsi 'Remember me' otomatis dicentang agar sesi login awet jangka panjang!")
+            print("✅ Opsi 'Remember me' otomatis dicentang agar sesi login awet bertahun-tahun!")
     except Exception:
         pass
 
-    print("\n" + "#" * 65)
+    print("\n" + "#" * 70)
     print("👉 PETUNJUK:")
     print("1. Jendela browser Chromium sudah terbuka.")
-    print("2. Silakan ketik Email & Password akun Smailpro Premium Anda lalu Login.")
-    print("3. Tunggu hingga halaman dialihkan ke https://smailpro.com/temporary-email.")
-    print("4. Setelah berhasil masuk ke dashboard Smailpro:")
-    print("   👉 Tekan tombol ENTER di jendela CMD / terminal ini untuk menyimpan sesi!")
-    print("#" * 65 + "\n")
+    print("2. Silakan ketik Email & Password akun Smailpro Premium Anda.")
+    print("3. Pastikan kotak 'Remember me' tetap tercentang.")
+    print("4. Klik tombol Login dan selesaikan tantangan jika ada.")
+    print("5. Tunggu hingga halaman dialihkan ke https://smailpro.com/temporary-email.")
+    print("6. Script ini akan OTOMATIS mendeteksi status login aktif dan menyimpan sesi!")
+    print("   (Atau tekan ENTER jika ingin menyimpan manual setelah dashboard terbuka).")
+    print("#" * 70 + "\n")
     
     # Task 1: Auto-detection in background
     async def auto_detect():
@@ -83,6 +86,8 @@ async def run_login_helper():
                     }''')
                     if status.get("isLoggedIn") or status.get("isPremium"):
                         print("\n🎉 Auto-detect: Status login Premium terdeteksi aktif!")
+                        # Wait a moment for all cookies to settle
+                        await asyncio.sleep(2)
                         return status
             except Exception:
                 pass
@@ -137,13 +142,27 @@ async def run_login_helper():
     
     with open(config.SESSION_STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(session_data, f, indent=2)
+
+    raw_json_str = json.dumps(session_data)
+    b64_str = base64.b64encode(raw_json_str.encode("utf-8")).decode("utf-8")
         
-    print("\n" + "=" * 65)
+    print("\n" + "=" * 70)
     print(f"✅ SESI SMAILPRO BERHASIL DISIMPAN KE: {config.SESSION_STATE_FILE}")
     print(f"📊 Total Cookies Tersimpan: {len(cookies)}")
     print(f"🔑 Status Akun: LoggedIn={status.get('isLoggedIn')}, Premium={status.get('isPremium')}")
-    print("=" * 65)
+    print("=" * 70)
     
+    print("\n" + "-" * 70)
+    print("📋 KODE BASE64 UNTUK BOT TELEGRAM (Bisa langsung dipaste di bot Telegram):")
+    print("-" * 70)
+    print(b64_str)
+    print("-" * 70)
+    print("💡 CARA MUDAH UPDATE SESI KE VPS:")
+    print("1. Buka Bot Telegram Anda sebagai Admin -> Klik [⚙️ Panel Admin]")
+    print("2. Klik menu [🔑 Perbarui Sesi SmailPro]")
+    print("3. Tempel (Paste) kode base64 di atas -> Selesai! Bot langsung aktif seketika.")
+    print("=" * 70)
+
     print("\nMenutup browser dalam 3 detik...")
     await asyncio.sleep(3)
     try:
@@ -151,7 +170,7 @@ async def run_login_helper():
         await playwright.stop()
     except Exception:
         pass
-    print("✅ Selesai! Bot sekarang siap digunakan.\n")
+    print("✅ Selesai! Sesi siap digunakan.\n")
 
 if __name__ == "__main__":
     asyncio.run(run_login_helper())

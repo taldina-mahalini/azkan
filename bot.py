@@ -1672,6 +1672,10 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             InlineKeyboardButton("➖ Potong Saldo User", callback_data="adm_btn_deduct_user"),
         ],
         [
+            InlineKeyboardButton("🔄 Revive Sesi SmailPro", callback_data="adm_btn_revive_session"),
+            InlineKeyboardButton("🔑 Input Sesi (Base64)", callback_data="adm_btn_input_session"),
+        ],
+        [
             InlineKeyboardButton("📊 Analisis Kebutuhan OTP", callback_data="adm_analytics"),
             InlineKeyboardButton("🏆 Top User & Top Up", callback_data="adm_topusers"),
         ],
@@ -1772,6 +1776,135 @@ async def admin_cancel_action_callback(update: Update, context: ContextTypes.DEF
     admin_states.pop(user.id, None)
     await query.answer("Tindakan dibatalkan.", show_alert=False)
     await admin_panel_handler(update, context)
+
+
+async def admin_revive_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user = update.effective_user
+    if user.id not in config.ADMIN_IDS:
+        return
+    await query.answer("Memeriksa & memulihkan sesi SmailPro...", show_alert=False)
+
+    status_msg = await query.message.reply_text("⏳ <i>Sedang memeriksa & mencoba auto-recovery sesi SmailPro...</i>", parse_mode=ParseMode.HTML)
+    
+    try:
+        cur_status = await smailpro.check_session_status()
+        if not cur_status.get("isLoggedIn"):
+            recovered = await smailpro.attempt_session_recovery()
+            cur_status = await smailpro.check_session_status()
+        else:
+            recovered = True
+
+        if cur_status.get("isLoggedIn"):
+            res_text = (
+                f"✅ <b>SESI SMAILPRO AKTIF & NORMAL!</b>\n\n"
+                f"• Status Login: <b>✅ LOGGED IN</b>\n"
+                f"• Tipe Akun: <b>{'💎 PREMIUM' if cur_status.get('isPremium') else 'Reguler'}</b>\n"
+                f"• Auto Keep-Alive: <b>Aktif setiap 4 menit</b> (cookies diperbarui ke disk otomatis)\n\n"
+                f"<i>Bot siap melayani pembuatan email OTP tanpa kendala!</i>"
+            )
+        else:
+            res_text = (
+                f"⚠️ <b>SESI SMAILPRO BELUM LOGIN</b>\n\n"
+                f"Sesi akun SmailPro di browser belum login (isLoggedIn: False).\n\n"
+                f"<b>Cara Memperbarui Sesi dengan Cepat:</b>\n"
+                f"1. Jalankan <code>session_login.py</code> di PC Anda untuk login.\n"
+                f"2. Salin kode Base64 yang muncul di layar CMD.\n"
+                f"3. Klik tombol <b>🔑 Input Sesi (Base64)</b> di bawah ini lalu tempel kodenya di chat bot!"
+            )
+
+        back_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔑 Input Sesi (Base64)", callback_data="adm_btn_input_session")],
+            [InlineKeyboardButton("⚙️ Kembali ke Panel Admin", callback_data="adm_refresh_panel")]
+        ])
+        await status_msg.edit_text(res_text, parse_mode=ParseMode.HTML, reply_markup=back_markup)
+    except Exception as e:
+        logger.error("Error in revive session: %s", e)
+        await status_msg.edit_text(f"❌ Terjadi kesalahan saat memeriksa sesi: <code>{str(e)}</code>", parse_mode=ParseMode.HTML)
+
+
+async def admin_input_session_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user = update.effective_user
+    if user.id not in config.ADMIN_IDS:
+        return
+    await query.answer()
+
+    admin_states[user.id] = {"action": "waiting_session_b64"}
+
+    prompt_text = (
+        "🔑 <b>INPUT / TEMPEL SESI SMAILPRO (BASE64)</b>\n\n"
+        "Silakan tempel (paste) kode Base64 hasil dari <code>session_login.py</code> atau <code>export_session.py</code> langsung ke chat bot ini.\n\n"
+        "Bot akan otomatis memvalidasi, menyimpan ke disk, dan mengaktifkan sesi secara instan di server VPS tanpa perlu restart!\n\n"
+        "<i>Ketik <code>batal</code> untuk membatalkan.</i>"
+    )
+
+    cancel_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Batal", callback_data="adm_cancel_action")]
+    ])
+    await query.message.edit_text(prompt_text, parse_mode=ParseMode.HTML, reply_markup=cancel_markup)
+
+
+async def execute_admin_session_update(update: Update, context: ContextTypes.DEFAULT_TYPE, b64_text: str):
+    """Parses base64 session, writes to SESSION_STATE_FILE, and reloads SmailPro engine."""
+    import base64
+    import json
+    b64_clean = b64_text.strip()
+    try:
+        raw_json = base64.b64decode(b64_clean).decode("utf-8")
+        session_data = json.loads(raw_json)
+        if not isinstance(session_data, dict) or "cookies" not in session_data:
+            raise ValueError("Data session tidak memiliki list cookies yang valid.")
+    except Exception as e:
+        err = await update.message.reply_text(
+            f"❌ <b>Format Base64 / JSON tidak valid!</b>\n\nDetail: <code>{str(e)}</code>\n"
+            f"Pastikan Anda menyalin seluruh teks Base64 yang dihasilkan oleh <code>session_login.py</code>.",
+            parse_mode=ParseMode.HTML
+        )
+        schedule_delete(err, delay=15)
+        return
+
+    status_msg = await update.message.reply_text("⏳ <i>Sedang menerapkan sesi baru ke SmailPro Engine...</i>", parse_mode=ParseMode.HTML)
+
+    try:
+        with open(config.SESSION_STATE_FILE, "w", encoding="utf-8") as f:
+            f.write(raw_json)
+
+        new_status = await smailpro.reload_session(session_data)
+
+        if new_status.get("isLoggedIn") or new_status.get("isPremium"):
+            res_text = (
+                f"✅ <b>SESI SMAILPRO BERHASIL DIAKTIFKAN!</b>\n\n"
+                f"• Status Login: <b>✅ LOGGED IN</b>\n"
+                f"• Status Akun: <b>{'💎 PREMIUM' if new_status.get('isPremium') else 'Reguler'}</b>\n"
+                f"• Total Cookies: <b>{len(session_data.get('cookies', []))}</b>\n\n"
+                f"<i>Bot OTP sekarang sudah siap membuat email Gmail, Outlook, dan Hotmail tanpa kendala!</i>"
+            )
+        else:
+            res_text = (
+                f"⚠️ <b>SESI BERHASIL DISIMPAN TETAPI STATUS BELUM LOGIN</b>\n\n"
+                f"• Status Login: <code>{new_status.get('isLoggedIn')}</code>\n"
+                f"• Detail: Akun belum terdeteksi login di smailpro.com. Pastikan akun Smailpro Anda aktif dan coba lagi."
+            )
+
+        back_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚙️ Kembali ke Panel Admin", callback_data="adm_refresh_panel")]
+        ])
+        await status_msg.edit_text(res_text, parse_mode=ParseMode.HTML, reply_markup=back_markup)
+    except Exception as err:
+        logger.error("Error applying new smailpro session: %s", err, exc_info=True)
+        await status_msg.edit_text(f"❌ Gagal menerapkan sesi: <code>{str(err)}</code>", parse_mode=ParseMode.HTML)
+
+
+async def cmd_setsession(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command /setsession <base64> to update session directly from Telegram chat."""
+    if update.effective_user.id not in config.ADMIN_IDS:
+        return
+    if not context.args:
+        await update.message.reply_text("Format: /setsession <kode_base64>")
+        return
+    b64_arg = context.args[0].strip()
+    await execute_admin_session_update(update, context, b64_arg)
 
 
 async def execute_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE, broadcast_content: str):
@@ -2108,6 +2241,11 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             admin_states.pop(user_id, None)
             is_deduct = (action == "waiting_deduct_user")
             await execute_admin_balance_adjustment(update, context, text, is_deduct=is_deduct)
+            return
+
+        elif action == "waiting_session_b64":
+            admin_states.pop(user_id, None)
+            await execute_admin_session_update(update, context, text)
             return
 
     # Check topup custom amount state
@@ -2574,6 +2712,7 @@ def main():
     application.add_handler(CommandHandler("tambahsaldo", cmd_tambahsaldo))
     application.add_handler(CommandHandler("kurangsaldo", cmd_kurangsaldo))
     application.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    application.add_handler(CommandHandler("setsession", cmd_setsession))
     application.add_handler(CommandHandler("admin", admin_panel_handler))
 
     # Callback queries
@@ -2591,6 +2730,8 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_broadcast_prompt_callback, pattern=r"^adm_btn_broadcast$"))
     application.add_handler(CallbackQueryHandler(admin_topup_user_prompt_callback, pattern=r"^adm_btn_topup_user$"))
     application.add_handler(CallbackQueryHandler(admin_deduct_user_prompt_callback, pattern=r"^adm_btn_deduct_user$"))
+    application.add_handler(CallbackQueryHandler(admin_revive_session_callback, pattern=r"^adm_btn_revive_session$"))
+    application.add_handler(CallbackQueryHandler(admin_input_session_callback, pattern=r"^adm_btn_input_session$"))
     application.add_handler(CallbackQueryHandler(admin_cancel_action_callback, pattern=r"^adm_cancel_action$"))
     application.add_handler(CallbackQueryHandler(admin_analytics_handler, pattern=r"^adm_analytics$"))
     application.add_handler(CallbackQueryHandler(admin_topusers_handler, pattern=r"^adm_topusers$"))

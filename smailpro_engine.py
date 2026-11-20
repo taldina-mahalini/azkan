@@ -70,8 +70,13 @@ class SmailProEngine:
                     logger.warning("Could not load session state file: %s", e)
 
             if loaded_session and "cookies" in loaded_session:
-                await self.context.add_cookies(loaded_session["cookies"])
-                logger.info("Successfully added %d session cookies to browser context", len(loaded_session["cookies"]))
+                is_valid = loaded_session.get("status", {}).get("isLoggedIn", True)
+                curr_cookies = await self.context.cookies()
+                if is_valid or not curr_cookies:
+                    await self.context.add_cookies(loaded_session["cookies"])
+                    logger.info("Successfully added %d session cookies to browser context", len(loaded_session["cookies"]))
+                else:
+                    logger.info("Preserving existing browser context cookies (session file was logged out)")
 
             # Open SmailPro page
             pages = self.context.pages
@@ -83,11 +88,19 @@ class SmailProEngine:
 
             # Check login status
             status = await self.check_session_status()
-            logger.info("SmailPro session status: %s", status)
+            logger.info("SmailPro initial session status: %s", status)
+
+            # If not logged in on startup, attempt automatic recovery via SSO
+            if not status.get("isLoggedIn"):
+                logger.info("Attempting automatic session recovery via SSO on startup...")
+                recovered = await self.attempt_session_recovery()
+                if recovered:
+                    status = await self.check_session_status()
+                    logger.info("Post-recovery session status: %s", status)
 
             self.is_initialized = True
 
-            # Start keep-alive loop to prevent session idle timeout
+            # Start aggressive keep-alive loop (pings every 4 minutes & auto-saves cookies)
             if not self.keep_alive_task or self.keep_alive_task.done():
                 self.keep_alive_task = asyncio.create_task(self._keep_alive_loop())
         except Exception as e:
@@ -133,18 +146,106 @@ class SmailProEngine:
             logger.error("Error checking session status: %s", e)
             return {"isLoggedIn": False, "isPremium": False, "error": str(e)}
 
+    async def save_current_session_to_disk(self, status: Optional[Dict[str, Any]] = None):
+        """Persists live refreshed cookies and status to disk (config.SESSION_STATE_FILE)."""
+        try:
+            if not self.context:
+                return
+            cookies = await self.context.cookies()
+            if not cookies:
+                return
+            cur_status = status or await self.check_session_status()
+            session_data = {
+                "cookies": cookies,
+                "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": cur_status
+            }
+            with open(config.SESSION_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(session_data, f, indent=2)
+            logger.debug("Successfully saved %d live session cookies to %s", len(cookies), config.SESSION_STATE_FILE)
+        except Exception as e:
+            logger.warning("Could not persist session cookies to disk: %s", e)
+
+    async def attempt_session_recovery(self) -> bool:
+        """
+        Attempts to revive session using stored persistent remember_web token via my.sonjj.com.
+        When successful, saves refreshed cookies to disk immediately.
+        """
+        try:
+            logger.info("Attempting session recovery: navigating to my.sonjj.com SSO...")
+            await self.page.goto("https://my.sonjj.com/login?back=https://smailpro.com/temporary-email", timeout=40000)
+            await self.page.wait_for_timeout(4000)
+
+            # If remember_web cookie was valid, my.sonjj.com automatically redirects to smailpro.com
+            curr_url = self.page.url
+            if "smailpro.com" in curr_url and "/login" not in curr_url:
+                status = await self.check_session_status()
+                if status.get("isLoggedIn"):
+                    logger.info("SSO Recovery SUCCESS! Status: %s", status)
+                    await self.save_current_session_to_disk(status)
+                    return True
+
+            # Return to temporary-email
+            await self.page.goto("https://smailpro.com/temporary-email", timeout=30000)
+            await self.page.wait_for_timeout(3000)
+            status = await self.check_session_status()
+            if status.get("isLoggedIn"):
+                logger.info("Session verified logged in on smailpro.com!")
+                await self.save_current_session_to_disk(status)
+                return True
+        except Exception as e:
+            logger.warning("Error during session recovery attempt: %s", e)
+        return False
+
+    async def reload_session(self, session_data: dict) -> Dict[str, Any]:
+        """Injects new cookies into browser context, reloads page, and checks status."""
+        async with self.lock:
+            await self.ensure_page_ready()
+            if "cookies" in session_data:
+                await self.context.add_cookies(session_data["cookies"])
+                logger.info("Injected %d cookies into context from reload_session", len(session_data["cookies"]))
+
+            await self.page.goto("https://smailpro.com/temporary-email", timeout=45000)
+            await self.page.wait_for_timeout(3000)
+            status = await self.check_session_status()
+            if not status.get("isLoggedIn"):
+                await self.attempt_session_recovery()
+                status = await self.check_session_status()
+
+            if status.get("isLoggedIn"):
+                await self.save_current_session_to_disk(status)
+            return status
+
     async def _keep_alive_loop(self):
-        """Pings Smailpro every 2 hours to keep session active and avoid idle timeout."""
+        """
+        Pings Smailpro every 4 minutes (240s) to keep session active,
+        auto-renews session tokens, and continuously writes live cookies to disk.
+        """
         while True:
             try:
-                await asyncio.sleep(2 * 3600)  # Ping every 2 hours
+                await asyncio.sleep(240)  # Ping every 4 minutes (prevents Laravel 120-min session timeout)
                 if self.is_initialized and self.page and not self.page.is_closed():
-                    logger.info("Running SmailPro session keep-alive ping...")
                     async with self.lock:
-                        await self.page.evaluate('''() => {
-                            fetch('/app/create?username=random&type=real&domain=gmail.com&server=2', { method: 'HEAD' }).catch(() => {});
-                        }''')
-                        logger.info("SmailPro session keep-alive ping finished.")
+                        # Step 1: Lightweight HEAD touch
+                        try:
+                            await self.page.evaluate('''() => {
+                                fetch('/app/create?username=random&type=real&domain=gmail.com&server=2', { method: 'HEAD' }).catch(() => {});
+                            }''')
+                        except Exception:
+                            pass
+
+                        # Step 2: Check status
+                        status = await self.check_session_status()
+                        if status.get("isLoggedIn"):
+                            # Save live renewed cookies to disk so reboots/restarts keep the session!
+                            await self.save_current_session_to_disk(status)
+                        else:
+                            logger.warning("Keep-alive detected session dropped! Attempting auto-recovery via SSO...")
+                            recovered = await self.attempt_session_recovery()
+                            if recovered:
+                                logger.info("Keep-alive SSO recovery succeeded!")
+                            else:
+                                logger.warning("Keep-alive SSO recovery could not restore session.")
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -242,9 +343,37 @@ class SmailProEngine:
             # Check if session is expired or not logged in
             session_info = await self.check_session_status()
             if not session_info.get("isLoggedIn"):
+                logger.warning("Session not logged in during create_email. Attempting auto SSO recovery...")
+                if await self.attempt_session_recovery():
+                    logger.info("Session successfully recovered via SSO! Performing immediate retry...")
+                    try:
+                        retry_res = await self.page.evaluate('''async (cfg) => {
+                            const query = `?username=random&type=${cfg.type}&domain=${cfg.domain}&server=${cfg.server}`;
+                            const url = `/app/create${query}`;
+                            const headers = { 'Content-Type': 'application/json' };
+                            const response = await fetch(url, { method: 'GET', headers: headers });
+                            if (!response.ok) return { success: false, error: 'HTTP ' + response.status };
+                            const data = await response.json();
+                            if (data && data.address) {
+                                return {
+                                    success: true,
+                                    email: data.address,
+                                    key: data.key || '',
+                                    timestamp: data.timestamp || Math.floor(Date.now() / 1000)
+                                };
+                            }
+                            return { success: false, error: data.msg || 'No email returned' };
+                        }''', {"domain": domain, "type": account_type, "server": server_choice, "emailType": email_type})
+                        if retry_res.get("success") and retry_res.get("email"):
+                            cand = retry_res["email"]
+                            if not db.is_email_used(cand):
+                                return retry_res
+                    except Exception as retry_err:
+                        logger.warning("Post-recovery retry failed: %s", retry_err)
+
                 return {
                     "success": False,
-                    "error": f"Sesi Smailpro belum login atau kedaluwarsa ({last_error}). Silakan perbarui sesi login Smailpro."
+                    "error": f"Sesi Smailpro belum login atau kedaluwarsa ({last_error}). Silakan perbarui sesi login Smailpro via Panel Admin."
                 }
 
             return {"success": False, "error": f"Smailpro: {last_error}"}
