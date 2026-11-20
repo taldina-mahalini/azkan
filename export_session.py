@@ -12,13 +12,13 @@ if sys.platform == "win32":
 
 def export_session():
     print("=" * 65)
-    print("      📦 EXPORT SESSION SMAILPRO UNTUK RENDER / CLOUD")
+    print("      📦 EXPORT SESSION BotOtpbyGMAIL UNTUK RENDER / CLOUD")
     print("=" * 65)
 
     if not config.SESSION_STATE_FILE.exists():
         print("\n❌ File sesi belum ditemukan!")
         print("Silakan jalankan 'login_smailpro.bat' atau 'python session_login.py' terlebih dahulu")
-        print("untuk login ke akun Smailpro Premium Anda.")
+        print("untuk login ke akun BotOtpbyGMAIL Premium Anda.")
         print("=" * 65)
         return
 

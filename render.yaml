@@ -18,6 +18,10 @@ services:
         value: true
       - key: SMAILPRO_SESSION_B64
         sync: false
+      - key: AUTOGOPAY_API_KEY
+        sync: false
+      - key: AUTOGOPAY_BASE_URL
+        value: https://v1-gateway.autogopay.site
       - key: PAYMENT_DANA
         value: 0812-3456-7890
       - key: PAYMENT_GOPAY

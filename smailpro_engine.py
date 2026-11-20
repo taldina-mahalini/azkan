@@ -373,10 +373,10 @@ class SmailProEngine:
 
                 return {
                     "success": False,
-                    "error": f"Sesi Smailpro belum login atau kedaluwarsa ({last_error}). Silakan perbarui sesi login Smailpro via Panel Admin."
+                    "error": f"Sesi BotOtpbyGMAIL belum login atau kedaluwarsa ({last_error}). Silakan perbarui sesi login via Panel Admin."
                 }
 
-            return {"success": False, "error": f"Smailpro: {last_error}"}
+            return {"success": False, "error": f"BotOtpbyGMAIL: {last_error}"}
 
     async def check_inbox(self, email_address: str, key: str = "", timestamp: int = 0) -> Dict[str, Any]:
         """

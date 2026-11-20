@@ -1653,7 +1653,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"• Order Sukses (OTP Masuk): <b>{stats['completed_orders']}</b>\n"
         f"• Total Omset OTP: <b>Rp {stats['total_revenue']:,}</b>\n"
         f"• Total Saldo Mengendap: <b>Rp {stats['total_user_balance']:,}</b>\n\n"
-        f"🌐 <b>Status Server SmailPro Engine:</b>\n"
+        f"🌐 <b>Status Server BotOtpbyGMAIL Engine:</b>\n"
         f"• Status Premium: <b>{premium_icon}</b>\n"
         f"• Logged In: <b>{session_status.get('isLoggedIn')}</b>\n\n"
         f"🛠️ <b>Fitur Analisis & Kontrol Admin:</b>\n"
@@ -1672,7 +1672,7 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             InlineKeyboardButton("➖ Potong Saldo User", callback_data="adm_btn_deduct_user"),
         ],
         [
-            InlineKeyboardButton("🔄 Revive Sesi SmailPro", callback_data="adm_btn_revive_session"),
+            InlineKeyboardButton("🔄 Revive Sesi BotOtpbyGMAIL", callback_data="adm_btn_revive_session"),
             InlineKeyboardButton("🔑 Input Sesi (Base64)", callback_data="adm_btn_input_session"),
         ],
         [
@@ -1783,9 +1783,9 @@ async def admin_revive_session_callback(update: Update, context: ContextTypes.DE
     user = update.effective_user
     if user.id not in config.ADMIN_IDS:
         return
-    await query.answer("Memeriksa & memulihkan sesi SmailPro...", show_alert=False)
+    await query.answer("Memeriksa & memulihkan sesi BotOtpbyGMAIL...", show_alert=False)
 
-    status_msg = await query.message.reply_text("⏳ <i>Sedang memeriksa & mencoba auto-recovery sesi SmailPro...</i>", parse_mode=ParseMode.HTML)
+    status_msg = await query.message.reply_text("⏳ <i>Sedang memeriksa & mencoba auto-recovery sesi BotOtpbyGMAIL...</i>", parse_mode=ParseMode.HTML)
     
     try:
         cur_status = await smailpro.check_session_status()
@@ -1797,7 +1797,7 @@ async def admin_revive_session_callback(update: Update, context: ContextTypes.DE
 
         if cur_status.get("isLoggedIn"):
             res_text = (
-                f"✅ <b>SESI SMAILPRO AKTIF & NORMAL!</b>\n\n"
+                f"✅ <b>SESI BOTOTPBYGMAIL AKTIF & NORMAL!</b>\n\n"
                 f"• Status Login: <b>✅ LOGGED IN</b>\n"
                 f"• Tipe Akun: <b>{'💎 PREMIUM' if cur_status.get('isPremium') else 'Reguler'}</b>\n"
                 f"• Auto Keep-Alive: <b>Aktif setiap 4 menit</b> (cookies diperbarui ke disk otomatis)\n\n"
@@ -1805,8 +1805,8 @@ async def admin_revive_session_callback(update: Update, context: ContextTypes.DE
             )
         else:
             res_text = (
-                f"⚠️ <b>SESI SMAILPRO BELUM LOGIN</b>\n\n"
-                f"Sesi akun SmailPro di browser belum login (isLoggedIn: False).\n\n"
+                f"⚠️ <b>SESI BOTOTPBYGMAIL BELUM LOGIN</b>\n\n"
+                f"Sesi akun BotOtpbyGMAIL di browser belum login (isLoggedIn: False).\n\n"
                 f"<b>Cara Memperbarui Sesi dengan Cepat:</b>\n"
                 f"1. Jalankan <code>session_login.py</code> di PC Anda untuk login.\n"
                 f"2. Salin kode Base64 yang muncul di layar CMD.\n"
@@ -1833,9 +1833,9 @@ async def admin_input_session_callback(update: Update, context: ContextTypes.DEF
     admin_states[user.id] = {"action": "waiting_session_b64"}
 
     prompt_text = (
-        "🔑 <b>INPUT / TEMPEL SESI SMAILPRO (BASE64)</b>\n\n"
+        "🔑 <b>INPUT / TEMPEL SESI BOTOTPBYGMAIL (BASE64)</b>\n\n"
         "Silakan tempel (paste) kode Base64 hasil dari <code>session_login.py</code> atau <code>export_session.py</code> langsung ke chat bot ini.\n\n"
-        "Bot akan otomatis memvalidasi, menyimpan ke disk, dan mengaktifkan sesi secara instan di server VPS tanpa perlu restart!\n\n"
+        "Bot akan otomatis memvalidasi, menyimpan ke disk, dan mengaktifkan sesi secara instan di server VPS / Render tanpa perlu restart!\n\n"
         "<i>Ketik <code>batal</code> untuk membatalkan.</i>"
     )
 
@@ -1846,7 +1846,7 @@ async def admin_input_session_callback(update: Update, context: ContextTypes.DEF
 
 
 async def execute_admin_session_update(update: Update, context: ContextTypes.DEFAULT_TYPE, b64_text: str):
-    """Parses base64 session, writes to SESSION_STATE_FILE, and reloads SmailPro engine."""
+    """Parses base64 session, writes to SESSION_STATE_FILE, and reloads BotOtpbyGMAIL engine."""
     import base64
     import json
     b64_clean = b64_text.strip()
@@ -1864,7 +1864,7 @@ async def execute_admin_session_update(update: Update, context: ContextTypes.DEF
         schedule_delete(err, delay=15)
         return
 
-    status_msg = await update.message.reply_text("⏳ <i>Sedang menerapkan sesi baru ke SmailPro Engine...</i>", parse_mode=ParseMode.HTML)
+    status_msg = await update.message.reply_text("⏳ <i>Sedang menerapkan sesi baru ke BotOtpbyGMAIL Engine...</i>", parse_mode=ParseMode.HTML)
 
     try:
         with open(config.SESSION_STATE_FILE, "w", encoding="utf-8") as f:
@@ -1874,7 +1874,7 @@ async def execute_admin_session_update(update: Update, context: ContextTypes.DEF
 
         if new_status.get("isLoggedIn") or new_status.get("isPremium"):
             res_text = (
-                f"✅ <b>SESI SMAILPRO BERHASIL DIAKTIFKAN!</b>\n\n"
+                f"✅ <b>SESI BOTOTPBYGMAIL BERHASIL DIAKTIFKAN!</b>\n\n"
                 f"• Status Login: <b>✅ LOGGED IN</b>\n"
                 f"• Status Akun: <b>{'💎 PREMIUM' if new_status.get('isPremium') else 'Reguler'}</b>\n"
                 f"• Total Cookies: <b>{len(session_data.get('cookies', []))}</b>\n\n"
@@ -1884,7 +1884,7 @@ async def execute_admin_session_update(update: Update, context: ContextTypes.DEF
             res_text = (
                 f"⚠️ <b>SESI BERHASIL DISIMPAN TETAPI STATUS BELUM LOGIN</b>\n\n"
                 f"• Status Login: <code>{new_status.get('isLoggedIn')}</code>\n"
-                f"• Detail: Akun belum terdeteksi login di smailpro.com. Pastikan akun Smailpro Anda aktif dan coba lagi."
+                f"• Detail: Akun belum terdeteksi login. Pastikan akun BotOtpbyGMAIL Anda aktif dan coba lagi."
             )
 
         back_markup = InlineKeyboardMarkup([

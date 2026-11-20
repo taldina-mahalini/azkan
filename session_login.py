@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 async def run_login_helper():
     print("\n" + "=" * 70)
-    print("      🔐 SMAILPRO PREMIUM LOGIN & AUTO-SYNC HELPER")
+    print("      🔐 BotOtpbyGMAIL PREMIUM LOGIN & AUTO-SYNC HELPER")
     print("=" * 70)
     print("Membuka browser Chromium di layar Anda...")
     print(f"Direktori Profil: {config.BROWSER_PROFILE_DIR}\n")
@@ -147,20 +147,21 @@ async def run_login_helper():
     b64_str = base64.b64encode(raw_json_str.encode("utf-8")).decode("utf-8")
         
     print("\n" + "=" * 70)
-    print(f"✅ SESI SMAILPRO BERHASIL DISIMPAN KE: {config.SESSION_STATE_FILE}")
+    print(f"✅ SESI BOTOTPBYGMAIL BERHASIL DISIMPAN KE: {config.SESSION_STATE_FILE}")
     print(f"📊 Total Cookies Tersimpan: {len(cookies)}")
     print(f"🔑 Status Akun: LoggedIn={status.get('isLoggedIn')}, Premium={status.get('isPremium')}")
     print("=" * 70)
     
     print("\n" + "-" * 70)
-    print("📋 KODE BASE64 UNTUK BOT TELEGRAM (Bisa langsung dipaste di bot Telegram):")
+    print("📋 KODE BASE64 UNTUK BOT TELEGRAM / RENDER (Bisa langsung dipaste di bot Telegram):")
     print("-" * 70)
     print(b64_str)
     print("-" * 70)
-    print("💡 CARA MUDAH UPDATE SESI KE VPS:")
+    print("💡 CARA MUDAH UPDATE SESI KE RENDER / VPS:")
     print("1. Buka Bot Telegram Anda sebagai Admin -> Klik [⚙️ Panel Admin]")
-    print("2. Klik menu [🔑 Perbarui Sesi SmailPro]")
+    print("2. Klik menu [🔑 Input Sesi (Base64)]")
     print("3. Tempel (Paste) kode base64 di atas -> Selesai! Bot langsung aktif seketika.")
+    print("4. Untuk Render, salin juga kode di atas ke Environment Variables: SMAILPRO_SESSION_B64.")
     print("=" * 70)
 
     print("\nMenutup browser dalam 3 detik...")
