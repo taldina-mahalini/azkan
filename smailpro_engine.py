@@ -6,6 +6,7 @@ import time
 from typing import Optional, Dict, Any, List
 from playwright.async_api import async_playwright, Playwright, BrowserContext, Page
 import config
+from database import db
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,15 @@ class SmailProEngine:
                         logger.info("Loaded SmailPro session from %s", config.SESSION_STATE_FILE)
                 except Exception as e:
                     logger.warning("Could not load session state file: %s", e)
+            elif db.get_setting("smailpro_session"):
+                try:
+                    import base64
+                    db_b64 = db.get_setting("smailpro_session")
+                    raw_decoded = base64.b64decode(db_b64).decode("utf-8")
+                    loaded_session = json.loads(raw_decoded)
+                    logger.info("Loaded BotOtpbyGMAIL session from persistent database settings table")
+                except Exception as e:
+                    logger.warning("Could not load session from database settings: %s", e)
 
             if loaded_session and "cookies" in loaded_session:
                 is_valid = loaded_session.get("status", {}).get("isLoggedIn", True)
@@ -160,9 +170,18 @@ class SmailProEngine:
                 "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "status": cur_status
             }
+            raw_str = json.dumps(session_data, indent=2)
             with open(config.SESSION_STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(session_data, f, indent=2)
+                f.write(raw_str)
             logger.debug("Successfully saved %d live session cookies to %s", len(cookies), config.SESSION_STATE_FILE)
+
+            # Also persist to database settings
+            try:
+                import base64
+                b64_str = base64.b64encode(raw_str.encode("utf-8")).decode("utf-8")
+                db.set_setting("smailpro_session", b64_str)
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("Could not persist session cookies to disk: %s", e)
 

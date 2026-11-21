@@ -4,20 +4,159 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 import config
 
+try:
+    import psycopg2
+    import psycopg2.extras
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
+
 logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self, db_path=config.DB_PATH):
+    def __init__(self, db_path=config.DB_PATH, database_url=config.DATABASE_URL):
         self.db_path = db_path
+        self.database_url = database_url
+        self.is_postgres = bool(self.database_url and HAS_PSYCOPG2)
+        if self.database_url and not HAS_PSYCOPG2:
+            logger.warning("DATABASE_URL is provided but psycopg2 is not installed. Falling back to SQLite.")
+            self.is_postgres = False
+
+        if self.is_postgres:
+            logger.info("Database: using PostgreSQL via DATABASE_URL")
+        else:
+            logger.info("Database: using SQLite at %s", self.db_path)
+
         self._init_db()
 
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        return conn
+        if self.is_postgres:
+            db_url = self.database_url
+            if db_url.startswith("postgres://"):
+                db_url = "postgresql://" + db_url[len("postgres://"):]
+            conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
+            conn.autocommit = False
+            return conn
+        else:
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL;")
+            return conn
+
+    def _sql(self, query: str) -> str:
+        if self.is_postgres:
+            return query.replace("?", "%s")
+        return query
+
+    def _execute_insert(self, cursor, query: str, params: tuple) -> int:
+        if self.is_postgres:
+            pg_q = self._sql(query.rstrip().rstrip(";")) + " RETURNING id;"
+            cursor.execute(pg_q, params)
+            row = cursor.fetchone()
+            return row["id"] if row else 0
+        else:
+            cursor.execute(query, params)
+            return cursor.lastrowid
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(self._sql("SELECT value FROM settings WHERE key = ?"), (key,))
+            row = cursor.fetchone()
+            if row:
+                return row["value"]
+            return default
+
+    def set_setting(self, key: str, value: str):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if self.is_postgres:
+                cursor.execute(
+                    "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                    (key, value)
+                )
+            else:
+                cursor.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                    (key, value)
+                )
+            conn.commit()
 
     def _init_db(self):
+        if self.is_postgres:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT,
+                    balance BIGINT DEFAULT 0,
+                    total_spent BIGINT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS orders (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    service TEXT NOT NULL,
+                    email_address TEXT NOT NULL,
+                    email_key TEXT,
+                    email_timestamp BIGINT,
+                    status TEXT DEFAULT 'waiting',
+                    cost INTEGER DEFAULT 200,
+                    otp_code TEXT,
+                    otp_sender TEXT,
+                    otp_subject TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS topups (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL,
+                    proof_file_id TEXT,
+                    tx_id TEXT,
+                    order_id TEXT,
+                    qr_string TEXT,
+                    checkout_url TEXT,
+                    expires_at TEXT,
+                    status TEXT DEFAULT 'pending',
+                    admin_id BIGINT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_at TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    type TEXT NOT NULL,
+                    amount BIGINT NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS broadcast_logs (
+                    id SERIAL PRIMARY KEY,
+                    admin_id BIGINT,
+                    total_targets INTEGER,
+                    success_count INTEGER,
+                    fail_count INTEGER,
+                    message_preview TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                conn.commit()
+                logger.info("PostgreSQL database initialized successfully!")
+                return
+
+        # SQLite initialization
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -208,12 +347,13 @@ class Database:
     def create_order(self, user_id: int, service: str, email_address: str, email_key: str = None, email_timestamp: int = None, cost: int = 200) -> int:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 INSERT INTO orders (user_id, service, email_address, email_key, email_timestamp, status, cost)
                 VALUES (?, ?, ?, ?, ?, 'waiting', ?)
-            """, (user_id, service, email_address, email_key, email_timestamp, cost))
+            """
+            order_id = self._execute_insert(cursor, query, (user_id, service, email_address, email_key, email_timestamp, cost))
             conn.commit()
-            return cursor.lastrowid
+            return order_id
 
     def get_order(self, order_id: int) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
@@ -303,15 +443,17 @@ class Database:
     ) -> int:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
+            query = """
                 INSERT INTO topups (user_id, amount, proof_file_id, tx_id, order_id, qr_string, checkout_url, expires_at, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-                """,
+            """
+            topup_id = self._execute_insert(
+                cursor,
+                query,
                 (user_id, amount, proof_file_id, tx_id, order_id, qr_string, checkout_url, expires_at)
             )
             conn.commit()
-            return cursor.lastrowid
+            return topup_id
 
     def get_topup(self, topup_id: int) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:

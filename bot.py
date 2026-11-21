@@ -1933,6 +1933,13 @@ async def execute_admin_session_update(update: Update, context: ContextTypes.DEF
         with open(config.SESSION_STATE_FILE, "w", encoding="utf-8") as f:
             f.write(raw_json)
 
+        # Persist to database settings table (survives any container restarts!)
+        try:
+            db.set_setting("smailpro_session", b64_clean)
+            logger.info("Session saved to persistent database settings table")
+        except Exception as se:
+            logger.warning("Could not persist session to db settings: %s", se)
+
         new_status = await smailpro.reload_session(session_data)
 
         if new_status.get("isLoggedIn") or new_status.get("isPremium"):

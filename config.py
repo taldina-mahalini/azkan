@@ -31,6 +31,7 @@ SMAILPRO_SESSION_B64 = os.getenv("SMAILPRO_SESSION_B64", "").strip()
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = DATA_DIR / "bot_otp.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 BROWSER_PROFILE_DIR = DATA_DIR / "browser_profile"
 SESSION_STATE_FILE = DATA_DIR / "smailpro_session.json"
 
