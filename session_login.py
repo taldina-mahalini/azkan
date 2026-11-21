@@ -69,24 +69,38 @@ async def run_login_helper():
             await asyncio.sleep(2)
             try:
                 curr = page.url
-                if "smailpro.com" in curr and "/login" not in curr:
+                if "smailpro.com" in curr:
                     status = await page.evaluate('''() => {
-                        const app = document.querySelector('[x-data]');
-                        if (app && app._x_dataStack) {
-                            for (const d of app._x_dataStack) {
-                                if (typeof d.isLoggedIn !== 'undefined') {
-                                    return {
-                                        isLoggedIn: !!d.isLoggedIn,
-                                        isPremium: !!d.isPremium
-                                    };
-                                }
+                        const menuUser = document.querySelector('[x-show="menu_user"]');
+                        if (!menuUser) return { isLoggedIn: false, isPremium: false };
+                        const text = (menuUser.innerText || '').toLowerCase();
+                        const isSignOut = text.includes('sign out') || text.includes('dashboard');
+                        const isGuest = text.includes('hi! guest') || text.includes('sign in');
+                        const isPremium = text.includes('premium') || text.includes('days left');
+                        
+                        let userName = '';
+                        let daysLeft = '';
+                        const lines = (menuUser.innerText || '').split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                        if (lines.length > 0 && !lines[0].toLowerCase().includes('guest')) {
+                            userName = lines[0];
+                        }
+                        for (const line of lines) {
+                            if (line.toLowerCase().includes('days left') || line.toLowerCase().includes('day left')) {
+                                daysLeft = line;
+                                break;
                             }
                         }
-                        return { isLoggedIn: false, isPremium: false };
+                        
+                        const logged = isSignOut && !isGuest;
+                        return {
+                            isLoggedIn: logged,
+                            isPremium: isPremium,
+                            userName: userName || (logged ? 'Member' : 'Guest'),
+                            daysLeft: daysLeft
+                        };
                     }''')
-                    if status.get("isLoggedIn") or status.get("isPremium"):
-                        print("\n🎉 Auto-detect: Status login Premium terdeteksi aktif!")
-                        # Wait a moment for all cookies to settle
+                    if status.get("isLoggedIn"):
+                        print(f"\n🎉 Auto-detect: Status login Premium terdeteksi aktif ({status.get('userName')} - {status.get('daysLeft', 'Premium')})!")
                         await asyncio.sleep(2)
                         return status
             except Exception:
@@ -115,19 +129,33 @@ async def run_login_helper():
     try:
         if not page.is_closed():
             status = await page.evaluate('''() => {
-                const app = document.querySelector('[x-data]');
-                if (app && app._x_dataStack) {
-                    for (const d of app._x_dataStack) {
-                        if (typeof d.isLoggedIn !== 'undefined') {
-                            return {
-                                isLoggedIn: !!d.isLoggedIn,
-                                isPremium: !!d.isPremium,
-                                email: d.selectedEmail ? d.selectedEmail.address : null
-                            };
-                        }
+                const menuUser = document.querySelector('[x-show="menu_user"]');
+                if (!menuUser) return { isLoggedIn: false, isPremium: false };
+                const text = (menuUser.innerText || '').toLowerCase();
+                const isSignOut = text.includes('sign out') || text.includes('dashboard');
+                const isGuest = text.includes('hi! guest') || text.includes('sign in');
+                const isPremium = text.includes('premium') || text.includes('days left');
+                
+                let userName = '';
+                let daysLeft = '';
+                const lines = (menuUser.innerText || '').split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                if (lines.length > 0 && !lines[0].toLowerCase().includes('guest')) {
+                    userName = lines[0];
+                }
+                for (const line of lines) {
+                    if (line.toLowerCase().includes('days left') || line.toLowerCase().includes('day left')) {
+                        daysLeft = line;
+                        break;
                     }
                 }
-                return { isLoggedIn: false, isPremium: false };
+                
+                const logged = isSignOut && !isGuest;
+                return {
+                    isLoggedIn: logged,
+                    isPremium: isPremium,
+                    userName: userName || (logged ? 'Member' : 'Guest'),
+                    daysLeft: daysLeft
+                };
             }''')
     except Exception:
         pass

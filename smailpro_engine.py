@@ -59,16 +59,9 @@ class SmailProEngine:
                     import base64
                     raw_decoded = base64.b64decode(config.SMAILPRO_SESSION_B64).decode("utf-8")
                     loaded_session = json.loads(raw_decoded)
-                    logger.info("Loaded SmailPro session from SMAILPRO_SESSION_B64 environment variable")
+                    logger.info("Loaded BotOtpbyGMAIL session from SMAILPRO_SESSION_B64 environment variable")
                 except Exception as e:
                     logger.warning("Failed parsing SMAILPRO_SESSION_B64: %s", e)
-            elif config.SESSION_STATE_FILE.exists():
-                try:
-                    with open(config.SESSION_STATE_FILE, "r", encoding="utf-8") as f:
-                        loaded_session = json.load(f)
-                        logger.info("Loaded SmailPro session from %s", config.SESSION_STATE_FILE)
-                except Exception as e:
-                    logger.warning("Could not load session state file: %s", e)
             elif db.get_setting("smailpro_session"):
                 try:
                     import base64
@@ -78,27 +71,38 @@ class SmailProEngine:
                     logger.info("Loaded BotOtpbyGMAIL session from persistent database settings table")
                 except Exception as e:
                     logger.warning("Could not load session from database settings: %s", e)
+            elif config.SESSION_STATE_FILE.exists():
+                try:
+                    with open(config.SESSION_STATE_FILE, "r", encoding="utf-8") as f:
+                        loaded_session = json.load(f)
+                        logger.info("Loaded BotOtpbyGMAIL session from %s", config.SESSION_STATE_FILE)
+                except Exception as e:
+                    logger.warning("Could not load session state file: %s", e)
 
             if loaded_session and "cookies" in loaded_session:
-                is_valid = loaded_session.get("status", {}).get("isLoggedIn", True)
-                curr_cookies = await self.context.cookies()
-                if is_valid or not curr_cookies:
-                    await self.context.add_cookies(loaded_session["cookies"])
-                    logger.info("Successfully added %d session cookies to browser context", len(loaded_session["cookies"]))
-                else:
-                    logger.info("Preserving existing browser context cookies (session file was logged out)")
+                cleaned_cookies = []
+                for c in loaded_session["cookies"]:
+                    cd = dict(c)
+                    if cd.get("sameSite") not in ["Strict", "Lax", "None"]:
+                        cd["sameSite"] = "Lax"
+                    cleaned_cookies.append(cd)
+                await self.context.add_cookies(cleaned_cookies)
+                logger.info("Successfully added %d session cookies to browser context", len(cleaned_cookies))
 
             # Open SmailPro page
             pages = self.context.pages
             self.page = pages[0] if pages else await self.context.new_page()
             
             logger.info("Navigating to https://smailpro.com/temporary-email ...")
-            await self.page.goto("https://smailpro.com/temporary-email", timeout=45000)
-            await self.page.wait_for_timeout(3000)
+            try:
+                await self.page.goto("https://smailpro.com/temporary-email", timeout=45000)
+                await self.page.wait_for_timeout(3000)
+            except Exception as e:
+                logger.warning("Initial page navigation notice: %s", e)
 
             # Check login status
             status = await self.check_session_status()
-            logger.info("SmailPro initial session status: %s", status)
+            logger.info("BotOtpbyGMAIL initial session status: %s", status)
 
             # If not logged in on startup, attempt automatic recovery via SSO
             if not status.get("isLoggedIn"):
@@ -132,24 +136,59 @@ class SmailProEngine:
 
     async def check_session_status(self) -> Dict[str, Any]:
         """Checks if current session on Smailpro is logged in and has premium."""
-        if not self.page:
+        if not self.page or self.page.is_closed():
             return {"isLoggedIn": False, "isPremium": False}
 
         try:
             status = await self.page.evaluate('''() => {
-                const app = document.querySelector('[x-data]');
-                if (app && app._x_dataStack) {
-                    for (const d of app._x_dataStack) {
-                        if (typeof d.isLoggedIn !== 'undefined') {
-                            return {
-                                isLoggedIn: !!d.isLoggedIn,
-                                isPremium: !!d.isPremium,
-                                historyCount: d.historyCount || 0
-                            };
+                // Method 1: Check DOM user menu
+                const menuUser = document.querySelector('[x-show="menu_user"]');
+                let menuText = '';
+                if (menuUser) {
+                    menuText = (menuUser.innerText || '').toLowerCase();
+                }
+
+                const isSignOut = menuText.includes('sign out') || menuText.includes('dashboard');
+                const isGuest = menuText.includes('hi! guest') || menuText.includes('sign in');
+                const isPremiumByText = menuText.includes('premium') || menuText.includes('days left');
+
+                let userName = '';
+                let daysLeft = '';
+                if (menuUser) {
+                    const lines = (menuUser.innerText || '').split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    if (lines.length > 0 && !lines[0].toLowerCase().includes('guest')) {
+                        userName = lines[0];
+                    }
+                    for (const line of lines) {
+                        if (line.toLowerCase().includes('days left') || line.toLowerCase().includes('day left')) {
+                            daysLeft = line;
+                            break;
                         }
                     }
                 }
-                return { isLoggedIn: false, isPremium: false, historyCount: 0 };
+
+                // Method 2: Check Alpine stack if available
+                let alpineLoggedIn = false;
+                let alpinePremium = false;
+                const apps = document.querySelectorAll('[x-data]');
+                apps.forEach(app => {
+                    if (app._x_dataStack) {
+                        app._x_dataStack.forEach(d => {
+                            if (typeof d.isLoggedIn !== 'undefined' && d.isLoggedIn) alpineLoggedIn = true;
+                            if (typeof d.isPremium !== 'undefined' && d.isPremium) alpinePremium = true;
+                        });
+                    }
+                });
+
+                const finalLoggedIn = (isSignOut && !isGuest) || alpineLoggedIn;
+                const finalPremium = isPremiumByText || alpinePremium;
+
+                return {
+                    isLoggedIn: !!finalLoggedIn,
+                    isPremium: !!finalPremium,
+                    userName: userName || (finalLoggedIn ? 'Member' : 'Guest'),
+                    daysLeft: daysLeft || (finalPremium ? 'Aktif' : '')
+                };
             }''')
             return status
         except Exception as e:
@@ -192,24 +231,18 @@ class SmailProEngine:
         """
         try:
             logger.info("Attempting session recovery: navigating to my.sonjj.com SSO...")
-            await self.page.goto("https://my.sonjj.com/login?back=https://smailpro.com/temporary-email", timeout=40000)
+            await self.page.goto("https://my.sonjj.com/login?back=https%3A%2F%2Fsmailpro.com%2Ftemporary-email", timeout=45000)
             await self.page.wait_for_timeout(4000)
 
             # If remember_web cookie was valid, my.sonjj.com automatically redirects to smailpro.com
             curr_url = self.page.url
-            if "smailpro.com" in curr_url and "/login" not in curr_url:
-                status = await self.check_session_status()
-                if status.get("isLoggedIn"):
-                    logger.info("SSO Recovery SUCCESS! Status: %s", status)
-                    await self.save_current_session_to_disk(status)
-                    return True
+            if "temporary-email" not in curr_url:
+                await self.page.goto("https://smailpro.com/temporary-email", timeout=30000)
+                await self.page.wait_for_timeout(3000)
 
-            # Return to temporary-email
-            await self.page.goto("https://smailpro.com/temporary-email", timeout=30000)
-            await self.page.wait_for_timeout(3000)
             status = await self.check_session_status()
             if status.get("isLoggedIn"):
-                logger.info("Session verified logged in on smailpro.com!")
+                logger.info("SSO Recovery SUCCESS! Status: %s", status)
                 await self.save_current_session_to_disk(status)
                 return True
         except Exception as e:
@@ -217,17 +250,34 @@ class SmailProEngine:
         return False
 
     async def reload_session(self, session_data: dict) -> Dict[str, Any]:
-        """Injects new cookies into browser context, reloads page, and checks status."""
+        """Injects new cookies into browser context, reloads page via SSO, and checks status."""
         async with self.lock:
             await self.ensure_page_ready()
             if "cookies" in session_data:
-                await self.context.add_cookies(session_data["cookies"])
-                logger.info("Injected %d cookies into context from reload_session", len(session_data["cookies"]))
+                cleaned_cookies = []
+                for c in session_data["cookies"]:
+                    cd = dict(c)
+                    if cd.get("sameSite") not in ["Strict", "Lax", "None"]:
+                        cd["sameSite"] = "Lax"
+                    cleaned_cookies.append(cd)
+                await self.context.add_cookies(cleaned_cookies)
+                logger.info("Injected %d cleaned cookies into context from reload_session", len(cleaned_cookies))
 
-            await self.page.goto("https://smailpro.com/temporary-email", timeout=45000)
-            await self.page.wait_for_timeout(3000)
+            # Trigger SSO handshake directly to sync my.sonjj.com session to smailpro.com
+            logger.info("Performing SSO handshake to sync cookies...")
+            try:
+                await self.page.goto("https://my.sonjj.com/login?back=https%3A%2F%2Fsmailpro.com%2Ftemporary-email", timeout=45000)
+                await self.page.wait_for_timeout(4000)
+            except Exception as e:
+                logger.warning("SSO navigation notice: %s", e)
+
+            if "temporary-email" not in self.page.url:
+                await self.page.goto("https://smailpro.com/temporary-email", timeout=30000)
+                await self.page.wait_for_timeout(3000)
+
             status = await self.check_session_status()
             if not status.get("isLoggedIn"):
+                logger.info("Direct check after SSO showed not logged in, running session recovery...")
                 await self.attempt_session_recovery()
                 status = await self.check_session_status()
 

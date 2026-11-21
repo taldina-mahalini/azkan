@@ -1705,8 +1705,15 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     stats = db.get_stats()
     session_status = await smailpro.check_session_status()
+    user_name = session_status.get("userName", "-")
+    days_left = session_status.get("daysLeft", "")
 
-    premium_icon = "✅ AKTIF" if session_status.get("isPremium") else "❌ BELUM LOGIN"
+    if session_status.get("isPremium"):
+        premium_icon = f"✅ 💎 PREMIUM ({days_left})" if days_left else "✅ 💎 PREMIUM"
+    elif session_status.get("isLoggedIn"):
+        premium_icon = "✅ LOGGED IN (Reguler)"
+    else:
+        premium_icon = "❌ BELUM LOGIN"
 
     text = (
         f"⚙️ <b>PANEL KONTROL ADMIN</b>\n\n"
@@ -1717,8 +1724,9 @@ async def admin_panel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"• Total Omset OTP: <b>Rp {stats['total_revenue']:,}</b>\n"
         f"• Total Saldo Mengendap: <b>Rp {stats['total_user_balance']:,}</b>\n\n"
         f"🌐 <b>Status Server BotOtpbyGMAIL Engine:</b>\n"
-        f"• Status Premium: <b>{premium_icon}</b>\n"
-        f"• Logged In: <b>{session_status.get('isLoggedIn')}</b>\n\n"
+        f"• Status Akun: <b>{premium_icon}</b>\n"
+        f"• Pengguna Akun: <b>{user_name}</b>\n"
+        f"• Status Sesi: <b>{'✅ Normal & 24 Jam Nonstop' if session_status.get('isLoggedIn') else '⚠️ Perlu Revive / Input Sesi'}</b>\n\n"
         f"🛠️ <b>Fitur Analisis & Kontrol Admin:</b>\n"
         f"Klik tombol menu di bawah untuk melihat rincian analytics kebutuhan user & leaderboard:"
     )
@@ -1859,11 +1867,14 @@ async def admin_revive_session_callback(update: Update, context: ContextTypes.DE
             recovered = True
 
         if cur_status.get("isLoggedIn"):
+            user_name = cur_status.get("userName", "Member")
+            days_left = cur_status.get("daysLeft", "Aktif")
             res_text = (
                 f"✅ <b>SESI BOTOTPBYGMAIL AKTIF & NORMAL!</b>\n\n"
-                f"• Status Login: <b>✅ LOGGED IN</b>\n"
-                f"• Tipe Akun: <b>{'💎 PREMIUM' if cur_status.get('isPremium') else 'Reguler'}</b>\n"
-                f"• Auto Keep-Alive: <b>Aktif setiap 4 menit</b> (cookies diperbarui ke disk otomatis)\n\n"
+                f"• Pengguna: <b>{user_name}</b>\n"
+                f"• Status Login: <b>✅ LOGGED IN (24 Jam Nonstop)</b>\n"
+                f"• Tipe Akun: <b>{'💎 PREMIUM (' + days_left + ')' if cur_status.get('isPremium') else 'Reguler'}</b>\n"
+                f"• Auto Keep-Alive: <b>Aktif setiap 4 menit</b> (cookies auto-refresh & auto-save)\n\n"
                 f"<i>Bot siap melayani pembuatan email OTP tanpa kendala!</i>"
             )
         else:
@@ -1943,12 +1954,15 @@ async def execute_admin_session_update(update: Update, context: ContextTypes.DEF
         new_status = await smailpro.reload_session(session_data)
 
         if new_status.get("isLoggedIn") or new_status.get("isPremium"):
+            user_name = new_status.get("userName", "Member")
+            days_left = new_status.get("daysLeft", "Aktif")
             res_text = (
                 f"✅ <b>SESI BOTOTPBYGMAIL BERHASIL DIAKTIFKAN!</b>\n\n"
-                f"• Status Login: <b>✅ LOGGED IN</b>\n"
-                f"• Status Akun: <b>{'💎 PREMIUM' if new_status.get('isPremium') else 'Reguler'}</b>\n"
+                f"• Pengguna Akun: <b>{user_name}</b>\n"
+                f"• Status Login: <b>✅ LOGGED IN (24 Jam Nonstop)</b>\n"
+                f"• Status Akun: <b>{'💎 PREMIUM (' + days_left + ')' if new_status.get('isPremium') else 'Reguler'}</b>\n"
                 f"• Total Cookies: <b>{len(session_data.get('cookies', []))}</b>\n\n"
-                f"<i>Bot OTP sekarang sudah siap membuat email Gmail, Outlook, dan Hotmail tanpa kendala!</i>"
+                f"<i>Bot OTP sekarang sudah aktif normal dan siap membuat email Gmail, Outlook, dan Hotmail tanpa kendala!</i>"
             )
         else:
             res_text = (
