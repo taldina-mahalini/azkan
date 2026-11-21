@@ -1,10 +1,12 @@
 import asyncio
 import io
 import logging
+import os
 import re
 import sys
 from datetime import datetime
 from typing import Dict, Optional
+import aiohttp
 
 if sys.platform == "win32":
     try:
@@ -60,17 +62,20 @@ user_qris_rate_limit: Dict[int, list] = {}
 telegram_bot: Optional[Bot] = None
 
 
-def schedule_delete(message, delay: int = 10):
+def schedule_delete(message, delay: int = 30):
     """
     Schedules a Telegram message to be automatically deleted after `delay` seconds.
-    Ensures transient chat messages are cleared every 10s, keeping only essential email cards.
+    Ensures transient chat messages are cleared every 30s, keeping only essential email cards.
     """
     if not message:
         return
 
+    # User requested 30 seconds auto-delete minimum
+    effective_delay = max(delay, 30) if delay > 0 else 30
+
     async def _do_delete():
         try:
-            await asyncio.sleep(delay)
+            await asyncio.sleep(effective_delay)
             await message.delete()
         except Exception:
             pass  # Message was already deleted by user or lacks permission
@@ -309,7 +314,7 @@ async def check_inbox_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             f"📭 <b>Belum ada pesan / OTP yang masuk.</b>\n\n"
             f"📧 Email: <code>{email_address}</code>\n"
             f"💡 <i>Saldo Anda BELUM dipotong sepeserpun. Pastikan Anda sudah mengirimkan OTP dari aplikasi target, lalu klik cek kembali.</i>\n\n"
-            f"⏱️ <i>Pesan status ini otomatis terhapus dalam 10 detik agar chat tetap rapi.</i>",
+            f"⏱️ <i>Pesan status ini otomatis terhapus dalam 30 detik agar chat tetap rapi.</i>",
             parse_mode=ParseMode.HTML
         )
         schedule_delete(status_msg, delay=10)
@@ -400,7 +405,7 @@ async def auto_poll_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     status_msg = await query.message.reply_text(
         f"🔄 <b>Auto-Refresh Aktif!</b>\n"
         f"Bot akan mengecek inbox email <code>{order['email_address']}</code> setiap 5 detik secara otomatis...\n"
-        f"<i>Notifikasi akan dikirim begitu OTP masuk. Pesan status ini terhapus dalam 10 detik.</i>",
+        f"<i>Notifikasi akan dikirim begitu OTP masuk. Pesan status ini terhapus dalam 30 detik.</i>",
         parse_mode=ParseMode.HTML
     )
     schedule_delete(status_msg, delay=10)
@@ -576,7 +581,7 @@ async def cancel_all_orders_callback(update: Update, context: ContextTypes.DEFAU
         f"• Status: <code>Semua Dibatalkan</code>\n"
         f"• Saldo Anda: <b>100% Aman &amp; Tidak Terpotong</b>\n\n"
         f"<i>Semua kartu order yang menunggu OTP telah dibatalkan. Anda dapat membuat pesanan baru kapan saja!</i>\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 15 detik.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik.</i>"
     )
 
     try:
@@ -628,7 +633,7 @@ async def cancel_all_orders_command(update: Update, context: ContextTypes.DEFAUL
         f"• Status: <code>Semua Dibatalkan</code>\n"
         f"• Saldo Anda: <b>100% Aman &amp; Tidak Terpotong</b>\n\n"
         f"<i>Semua kartu order yang menunggu OTP telah dibatalkan. Anda dapat membuat pesanan baru kapan saja!</i>\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 15 detik.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik.</i>"
     )
 
     target_msg = update.message or (update.callback_query.message if update.callback_query else None)
@@ -1398,7 +1403,7 @@ async def profile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💸 <b>Total Pemakaian:</b> Rp {db_user['total_spent']:,}\n"
         f"📬 <b>Order Aktif Terakhir:</b> {active_info}\n\n"
         f"📅 <b>Terdaftar Sejak:</b> {db_user['created_at']}\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 10 detik agar chat tetap rapi.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik agar chat tetap rapi.</i>"
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -1418,7 +1423,7 @@ async def history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders = db.get_user_orders(user.id, limit=8)
 
     if not orders:
-        text = "📖 <b>Riwayat Order:</b>\n\nAnda belum memiliki riwayat order email/OTP.\n\n⏱️ <i>Pesan ini otomatis dihapus dalam 10 detik.</i>"
+        text = "📖 <b>Riwayat Order:</b>\n\nAnda belum memiliki riwayat order email/OTP.\n\n⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik.</i>"
         if update.callback_query:
             await update.callback_query.answer()
             hist_msg = await update.callback_query.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -1438,7 +1443,7 @@ async def history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"   📧 <code>{o['email_address']}</code>\n"
             f"   {otp_info} | {o['created_at'][:16]}\n"
         )
-    lines.append("\n⏱️ <i>Pesan ini otomatis dihapus dalam 15 detik agar chat tetap rapi.</i>")
+    lines.append("\n⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik agar chat tetap rapi.</i>")
 
     full_text = "\n".join(lines)
 
@@ -1532,7 +1537,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"3. <b>Top Up Saldo:</b>\n"
         f"   • Klik menu <b>💰 Top Up Saldo</b> (Minimal Rp {config.MIN_TOPUP:,}).\n"
         f"   • Lakukan transfer dan kirim bukti pembayaran ke bot.\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 15 detik agar chat tetap rapi.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik agar chat tetap rapi.</i>"
     )
     help_msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML)
     schedule_delete(help_msg, delay=15)
@@ -1554,7 +1559,7 @@ async def stok_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Status: 100% Siap Digunakan\n\n"
         f"🛡️ <b>Jaminan Anti-Duplikat:</b> <b>AKTIF</b>\n"
         f"<i>Setiap email yang Anda generate dijamin 100% baru dan belum pernah dipakai sebelumnya.</i>\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 15 detik.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik.</i>"
     )
 
     msg = await (update.message or update.callback_query.message).reply_text(
@@ -1577,7 +1582,7 @@ async def tarif_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Metode Pembayaran: <b>QRIS Otomatis Real-Time</b>\n"
         f"• Mendukung Semua Bank &amp; E-Wallet: BCA, Mandiri, BRI, BNI, Jago, DANA, GoPay, OVO, ShopeePay\n"
         f"• <b>Verifikasi Otomatis:</b> Saldo langsung masuk otomatis hitungan detik setelah pembayaran berhasil.\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 15 detik.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik.</i>"
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -1602,7 +1607,7 @@ async def cs_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• Request layanan atau stok khusus\n\n"
         f"Silakan langsung hubungi Admin / CS kami:\n"
         f"👤 <b>Admin:</b> Ramba Store (@rambasstore)\n\n"
-        f"⏱️ <i>Pesan ini otomatis dihapus dalam 20 detik.</i>"
+        f"⏱️ <i>Pesan ini otomatis dihapus dalam 30 detik.</i>"
     )
 
     keyboard = InlineKeyboardMarkup([
@@ -2608,6 +2613,52 @@ async def qris_webhook_handler(request: web.Request):
     }, status=200)
 
 
+async def render_keep_alive_worker():
+    """
+    Continuous 24/7 background worker to prevent Render Free tier from sleeping/idling.
+    Render free tier sleeps after 15 minutes of no incoming HTTP traffic.
+    This worker pings the public URL (/health) every 7 minutes (420s), keeping Render awake 24/7 nonstop.
+    """
+    await asyncio.sleep(20)  # Wait for health server to be listening
+    logger.info("Render 24/7 keep-alive worker started.")
+
+    while True:
+        try:
+            target_url = (
+                os.getenv("RENDER_EXTERNAL_URL")
+                or os.getenv("SELF_URL")
+                or os.getenv("BASE_URL")
+            )
+            if not target_url and os.getenv("RENDER_EXTERNAL_HOSTNAME"):
+                target_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}"
+
+            timeout = aiohttp.ClientTimeout(total=15)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                if target_url:
+                    health_url = f"{target_url.rstrip('/')}/health"
+                    try:
+                        async with session.get(health_url) as resp:
+                            logger.info("[24/7 Keep-Alive] Public ping to %s -> status %s", health_url, resp.status)
+                    except Exception as pe:
+                        logger.warning("[24/7 Keep-Alive] Public ping failed (%s): %s", health_url, pe)
+                else:
+                    logger.info("[24/7 Keep-Alive] Target URL belum diset. Tambahkan variable SELF_URL di Render agar auto-ping ke domain publik aktif.")
+
+                # Local ping to ensure internal event loop is active
+                try:
+                    local_url = f"http://127.0.0.1:{config.PORT}/health"
+                    async with session.get(local_url) as resp:
+                        pass
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.warning("[24/7 Keep-Alive] Unexpected error in keep-alive worker: %s", e)
+
+        # Sleep for 7 minutes (420s) - well before Render's 15-minute sleep threshold
+        await asyncio.sleep(420)
+
+
 async def start_health_server():
     try:
         app = web.Application()
@@ -2637,6 +2688,9 @@ async def post_init(application: Application):
 
     # Start web server for Render health check and QRISHook webhook
     await start_health_server()
+
+    # Start 24/7 Render Keep-Alive worker to prevent sleep/idle
+    asyncio.create_task(render_keep_alive_worker())
 
     # Set bottom-left Menu Button commands
     from telegram import BotCommand

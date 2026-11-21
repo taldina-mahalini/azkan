@@ -18,6 +18,8 @@ services:
         value: true
       - key: SMAILPRO_SESSION_B64
         sync: false
+      - key: SELF_URL
+        sync: false
       - key: AUTOGOPAY_API_KEY
         sync: false
       - key: AUTOGOPAY_BASE_URL
