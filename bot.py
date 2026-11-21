@@ -84,10 +84,11 @@ def schedule_delete(message, delay: int = 30):
 
 
 def get_main_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    """Returns persistent main menu reply keyboard with 2 primary email products."""
+    """Returns persistent main menu reply keyboard with primary email products."""
     buttons = [
         [KeyboardButton("📧 OTP by Gmail")],
         [KeyboardButton("📬 OTP by OUTLOOK/HOTMAIL")],
+        [KeyboardButton("🎓 Buy Email Edu")],
         [KeyboardButton("💰 Top Up Saldo"), KeyboardButton("👤 Profil & Saldo")],
         [KeyboardButton("📊 Cek Stok Server"), KeyboardButton("📖 Riwayat Order")],
         [KeyboardButton("🗑️ Batalkan Semua Order"), KeyboardButton("🏷️ Tarif & Info")],
@@ -1620,6 +1621,63 @@ async def cs_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     schedule_delete(msg, delay=20)
 
 
+async def buy_email_edu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays information and direct ordering link for Email Edu across various countries."""
+    if update.message:
+        schedule_delete(update.message, delay=10)
+
+    text = (
+        "🎓 <b>LAYANAN BELI EMAIL EDU (STUDENT BENEFIT)</b>\n\n"
+        "Beli email EDU untuk klaim berbagai benefit edukasi (GitHub Student Developer Pack, JetBrains, Canva Pro, Notion, Autodesk, diskon software, dll).\n"
+        "<i>*Catatan: Berhasil tidaknya klaim benefit tergantung pada metode, IP/VPN, dan ketentuan masing-masing platform.</i>\n\n"
+        "🌍 <b>READY STOK EMAIL EDU BERBAGAI NEGARA:</b>\n"
+        "🇬🇷 <b>Yunani</b> (<code>.edu.gr</code>)\n"
+        "🇵🇭 <b>Filipina</b> (<code>.ph</code>)\n"
+        "🇧🇷 <b>Brasil</b> (<code>.com.br</code>)\n"
+        "🇪🇺 <b>Uni Eropa</b> (<code>.eu.org</code>)\n"
+        "🇨🇿 <b>Ceko</b> (<code>.cz</code>)\n"
+        "🇮🇷 <b>Iran</b> (<code>.ir</code>)\n"
+        "🇨🇴 <b>Kolombia</b> (<code>.co</code>)\n"
+        "🇪🇸 <b>Spanyol</b> (<code>.es</code>)\n"
+        "🇧🇪 <b>Belgia</b> (<code>.be</code>)\n"
+        "🇩🇪 <b>Jerman</b> (<code>.de</code>)\n"
+        "🇹🇷 <b>Turki</b> (<code>.com.tr</code>)\n"
+        "🇯🇵 <b>Jepang</b> (<code>.tokyo</code>)\n"
+        "🇳🇱 <b>Belanda</b> (<code>.nl</code>)\n"
+        "🇰🇷 <b>Korea Selatan</b> (<code>.kr</code>)\n"
+        "🇷🇺 <b>Rusia</b> (<code>.ru</code>)\n"
+        "🇮🇩 <b>Indonesia</b> (<code>.ac.id / .sch.id</code>)\n"
+        "🇮🇳 <b>India</b> (<code>.in / .co.in</code>)\n"
+        "🇬🇧 <b>Inggris / UK</b> (<code>.co.uk / .org.uk</code>)\n"
+        "🇺🇸 <b>Amerika Serikat</b> (<code>.us</code>)\n"
+        "🇨🇳 <b>Tiongkok</b> (<code>.cn / .com.cn</code>)\n"
+        "🌐 <b>Global EDU</b> (<code>.school / .edu</code>)\n"
+        "🇻🇳 <b>Vietnam</b> (<code>.edu.vn / .vn</code>)\n"
+        "🇲🇳 <b>Mongolia</b> (<code>.mn</code>)\n"
+        "🇰🇬 <b>Kirgizstan</b> (<code>.edu.kg / .kg</code>)\n"
+        "🇷🇸 <b>Serbia</b> (<code>.edu.rs</code>)\n"
+        "🇵🇱 <b>Polandia</b> (<code>.edu.pl</code>)\n\n"
+        "🚀 <b>CARA ORDER:</b>\n"
+        "Order langsung ke <b>https://emailedu.org/</b> dan dapatkan aksesnya secara instan!\n\n"
+        "⏱️ <i>Pesan ini otomatis dihapus dalam 60 detik agar chat tetap rapi.</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌐 Order Langsung di EmailEdu.org", url="https://emailedu.org/")],
+        [InlineKeyboardButton("💬 Hubungi CS / Admin", url="https://t.me/rambasstore")]
+    ])
+
+    target = update.message or (update.callback_query.message if update.callback_query else None)
+    if target:
+        msg = await target.reply_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+            disable_web_page_preview=True
+        )
+        schedule_delete(msg, delay=60)
+
+
 async def order_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         schedule_delete(update.message, delay=10)
@@ -2303,6 +2361,13 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cancel_all_orders_command(update, context)
     elif text == "🏷️ Tarif & Info":
         await tarif_handler(update, context)
+    elif (
+        text.startswith("🎓 Buy Email Edu")
+        or "buy email edu" in text.lower()
+        or "email edu" in text.lower()
+        or text.lower().strip() in ("/edu", "/emailedu", "/buyedu")
+    ):
+        await buy_email_edu_handler(update, context)
     elif text == "💬 Hubungi CS / Admin":
         await cs_handler(update, context)
     elif text == "ℹ️ Bantuan":
@@ -2702,6 +2767,7 @@ async def post_init(application: Application):
         BotCommand("stok", "Cek live stok server email"),
         BotCommand("riwayat", "Riwayat 8 order terakhir"),
         BotCommand("tarif", "Daftar tarif & ketentuan"),
+        BotCommand("edu", "Beli email Edu berbagai negara"),
         BotCommand("clear", "Bersihkan semua riwayat chat"),
         BotCommand("cs", "Hubungi Customer Service"),
         BotCommand("bantuan", "Panduan lengkap bot")
@@ -2759,6 +2825,7 @@ def main():
     application.add_handler(CommandHandler("order", order_command))
     application.add_handler(CommandHandler("stok", stok_handler))
     application.add_handler(CommandHandler("tarif", tarif_handler))
+    application.add_handler(CommandHandler(["edu", "emailedu", "buyedu"], buy_email_edu_handler))
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("cs", cs_handler))
     application.add_handler(CommandHandler("bantuan", help_handler))
