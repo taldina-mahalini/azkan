@@ -81,8 +81,8 @@ def schedule_delete(message, delay: int = 10):
 def get_main_keyboard(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Returns persistent main menu reply keyboard with 2 primary email products."""
     buttons = [
-        [KeyboardButton("📧 Otp by Gmail ( 1700 stok )")],
-        [KeyboardButton("📬 Otp by Outlook / Hotmail ( 8700 stok )")],
+        [KeyboardButton("📧 OTP by Gmail")],
+        [KeyboardButton("📬 OTP by OUTLOOK/HOTMAIL")],
         [KeyboardButton("💰 Top Up Saldo"), KeyboardButton("👤 Profil & Saldo")],
         [KeyboardButton("📊 Cek Stok Server"), KeyboardButton("📖 Riwayat Order")],
         [KeyboardButton("🗑️ Batalkan Semua Order"), KeyboardButton("🏷️ Tarif & Info")],
@@ -108,8 +108,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👋 Halo, <b>{user.first_name}</b>!\n\n"
         f"Selamat datang di <b>Bot OTP Email Generator</b> 🤖\n\n"
         f"📌 <b>Layanan Email Premium (100% Real Account):</b>\n"
-        f"• 📧 <b>Otp by Gmail</b> (1.700 Stok — Server 2 & 3 Premium)\n"
-        f"• 📬 <b>Otp by Outlook / Hotmail</b> (8.700 Stok — Server 2 Premium)\n\n"
+        f"• 📧 <b>OTP by Gmail</b> (Server 2 & 3 Premium)\n"
+        f"• 📬 <b>OTP by OUTLOOK/HOTMAIL</b> (Server 2 Premium)\n\n"
         f"✨ <i>Semua email adalah <b>Real Account</b> dan dijamin <b>100% akan update terus stoknya berkala, gaskan !!</b></i>\n\n"
         f"💰 <b>Ketentuan Tarif & Saldo:</b>\n"
         f"• Biaya per inbox/OTP masuk: <b>Rp {config.OTP_PRICE:,}</b>\n"
@@ -146,10 +146,10 @@ async def handle_order_request(update: Update, context: ContextTypes.DEFAULT_TYP
     db_user = db.get_or_create_user(user.id, user.username, user.first_name)
     is_admin = user.id in config.ADMIN_IDS
     if service == "gmail":
-        service_title = "Gmail (1.700 Stok — Server 2 & 3)"
+        service_title = "OTP by Gmail (Server 2 & 3)"
         service_display = "GMAIL"
     else:
-        service_title = "Outlook / Hotmail (8.700 Stok — Server 2)"
+        service_title = "OTP by OUTLOOK/HOTMAIL (Server 2)"
         service_display = "OUTLOOK / HOTMAIL"
 
     # Check minimum balance (Bypassed for Admin - Unlimited Balance)
@@ -1523,7 +1523,7 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"ℹ️ <b>PANDUAN & BANTUAN BOT OTP</b>\n\n"
         f"1. <b>Cara Pesan Email:</b>\n"
         f"   • Pastikan saldo Anda minimal Rp {config.OTP_PRICE:,}.\n"
-        f"   • Klik menu <b>📧 Otp by Gmail</b> atau <b>📬 Otp by Outlook / Hotmail</b>.\n"
+        f"   • Klik menu <b>📧 OTP by Gmail</b> atau <b>📬 OTP by OUTLOOK/HOTMAIL</b>.\n"
         f"   • Bot akan membuka Server dan memberikan 1 alamat email Real Account baru.\n\n"
         f"2. <b>Cara Menerima OTP:</b>\n"
         f"   • Salin email yang diberikan dan gunakan untuk registrasi pada website/aplikasi tujuan.\n"
@@ -1620,8 +1620,8 @@ async def order_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         schedule_delete(update.message, delay=10)
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📧 Pesan Gmail (Server 2 & 3)", callback_data="btn_ord_gmail")],
-        [InlineKeyboardButton("📬 Pesan Outlook / Hotmail (Server 2)", callback_data="btn_ord_outlook")]
+        [InlineKeyboardButton("📧 OTP by Gmail", callback_data="btn_ord_gmail")],
+        [InlineKeyboardButton("📬 OTP by OUTLOOK/HOTMAIL", callback_data="btn_ord_outlook")]
     ])
     target_msg = update.message or (update.callback_query.message if update.callback_query else None)
     if not target_msg:
@@ -2265,10 +2265,16 @@ async def text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     # Main Menu routing
-    if text.startswith("📧 Otp by Gmail") or text == "📧 Pesan OTP Gmail":
+    if (
+        text.startswith("📧 OTP by Gmail")
+        or text.startswith("📧 Otp by Gmail")
+        or "otp by gmail" in text.lower()
+        or text == "📧 Pesan OTP Gmail"
+    ):
         await handle_order_request(update, context, service="gmail")
     elif (
-        text.startswith("📬 Otp by Outlook")
+        text.startswith("📬 OTP by OUTLOOK")
+        or text.startswith("📬 Otp by Outlook")
         or text.startswith("📨 Otp by Hotmail")
         or "outlook" in text.lower()
         or "hotmail" in text.lower()
